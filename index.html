@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathBoard Pro - Bảng Trắng Toán Học</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; user-select: none; overflow: hidden; background: #f3f4f6; }
+
+        .board-bg-grid { background-color: #ffffff; background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px); background-size: 20px 20px; }
+        .board-bg-white { background-color: #ffffff; }
+        .board-bg-dot { background-color: #ffffff; background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px); background-size: 20px 20px; }
+
+        .math-tool-overlay { position: absolute; display: none; z-index: 20; pointer-events: auto; transform-origin: center center; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15)); }
+        .math-tool-overlay.active { display: block; }
+        .drag-area { cursor: grab; width: 100%; height: 100%; position: relative; }
+        .drag-area:active { cursor: grabbing; }
+
+        .rotate-handle {
+            position: absolute; width: 28px; height: 28px; background: #3b82f6; 
+            border: 2px solid white; border-radius: 50%; cursor: grab; 
+            bottom: -35px; left: 50%; transform: translateX(-50%); 
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;
+        }
+        .rotate-handle:hover { background: #2563eb; }
+        .rotate-handle::after { content: "↻"; color: white; font-size: 16px; font-weight: bold; }
+
+        .toolbar-scroll::-webkit-scrollbar { height: 6px; }
+        .toolbar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        .tool-btn {
+            width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; border: 1px solid transparent; transition: 0.1s; font-size: 18px; cursor: pointer;
+        }
+        .tool-btn:hover { background: #f1f5f9; border-color: #e2e8f0; }
+        .btn-active { background: #eff6ff !important; border-color: #93c5fd !important; color: #2563eb; }
+        
+        #scroll-container::-webkit-scrollbar { width: 10px; }
+        #scroll-container::-webkit-scrollbar-track { background: #e2e8f0; }
+        #scroll-container::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; border: 2px solid #e2e8f0; }
+        
+        .snap-indicator { position: absolute; width: 12px; height: 12px; background: rgba(239, 68, 68, 0.5); border: 2px solid #ef4444; border-radius: 50%; transform: translate(-50%, -50%); display: none; z-index: 30; pointer-events: none; }
+        .divider { width: 1px; height: 24px; background-color: #e2e8f0; margin: 0 8px; flex-shrink: 0; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+    <!-- THANH CÔNG CỤ NGANG -->
+    <header class="h-14 bg-white border-b border-gray-200 flex items-center px-3 z-40 shrink-0 shadow-sm toolbar-scroll overflow-x-auto whitespace-nowrap">
+        <div class="flex items-center gap-2 shrink-0">
+            <span class="font-bold text-blue-600 text-lg mr-2">📐 XuanBoard</span>
+            <select id="bg-selector" class="border border-gray-300 rounded text-sm px-2 py-1 outline-none text-gray-700 bg-gray-50 font-medium">
+                <option value="board-bg-grid" selected>Lưới Caro</option>
+                <option value="board-bg-white">Bảng Trắng</option>
+                <option value="board-bg-dot">Giấy Ô li</option>
+            </select>
+            <button id="save-pdf-btn" class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-sm font-bold hover:bg-red-100 ml-1">Lưu PDF</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="flex items-center gap-1 shrink-0">
+            <button id="undo-btn" class="tool-btn text-gray-600" title="Hoàn tác">↩️</button>
+            <button id="clear-btn" class="tool-btn text-red-500" title="Xóa toàn bộ bảng">🗑️</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- CÔNG CỤ VẺ & TƯƠNG TÁC -->
+        <div class="flex items-center gap-1 shrink-0">
+            <button class="tool-btn" data-tool="pointer" title="Con trỏ di chuyển (Pan)">✋</button>
+            <button class="tool-btn btn-active" data-tool="pen" title="Bút viết">✏️</button>
+            <button class="tool-btn text-yellow-500" data-tool="highlighter" title="Bút Highlight (Làm nổi bật)">🖍️</button>
+            <button class="tool-btn" data-tool="eraser" title="Tẩy">🧽</button>
+            <button class="tool-btn text-purple-600" data-tool="line" title="Kẻ đoạn thẳng">📏</button>
+            <button class="tool-btn" data-tool="midpoint" title="Trung điểm (Chấm 2 điểm)">⚄</button>
+            <button class="tool-btn text-blue-600" data-tool="parallel" title="Song song">⏸️</button>
+            <button class="tool-btn text-gray-700" data-tool="perpendicular" title="Vuông góc">⏊</button>
+            <button class="tool-btn text-blue-400" data-tool="parabola" title="Parabol">📈</button>
+            <button class="tool-btn text-pink-500" data-tool="compass" title="Đường tròn">⭕</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="flex items-center gap-2 shrink-0">
+            <div class="flex gap-1.5 items-center">
+                <button class="color-btn w-5 h-5 rounded-full ring-2 ring-blue-500 ring-offset-1" style="background-color: #000000;" data-color="#000000"></button>
+                <button class="color-btn w-5 h-5 rounded-full border border-gray-300" style="background-color: #ef4444;" data-color="#ef4444"></button>
+                <button class="color-btn w-5 h-5 rounded-full border border-gray-300" style="background-color: #3b82f6;" data-color="#3b82f6"></button>
+                <button class="color-btn w-5 h-5 rounded-full border border-gray-300" style="background-color: #eab308;" data-color="#eab308"></button>
+            </div>
+            <input type="range" id="stroke-width" min="1" max="25" value="2" class="w-20 mx-2 accent-blue-500">
+            <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 cursor-pointer">
+                <input type="checkbox" id="dashed-line" class="rounded w-4 h-4 text-blue-600"> Nét đứt
+            </label>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="flex items-center gap-3 shrink-0 mr-4">
+            <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 cursor-pointer bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-200 hover:bg-blue-50 transition">
+                <input type="checkbox" class="math-toggle w-3.5 h-3.5 text-blue-600" data-target="ruler-wrapper"> Thước thẳng
+            </label>
+            <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 cursor-pointer bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-200 hover:bg-blue-50 transition">
+                <input type="checkbox" class="math-toggle w-3.5 h-3.5 text-blue-600" data-target="protractor-wrapper"> Đo góc
+            </label>
+            <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 cursor-pointer bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-200 hover:bg-blue-50 transition">
+                <input type="checkbox" class="math-toggle w-3.5 h-3.5 text-blue-600" data-target="eke-wrapper"> Ê-ke
+            </label>
+        </div>
+    </header>
+
+    <!-- KHU VỰC BẢNG -->
+    <main class="flex-1 overflow-y-auto relative w-full" id="scroll-container">
+        <div id="canvas-wrapper" class="relative board-bg-grid w-full" style="height: 10000px;">
+            <canvas id="main-canvas" class="absolute top-0 left-0 w-full h-full z-0 cursor-crosshair"></canvas>
+            <canvas id="preview-canvas" class="absolute top-0 left-0 w-full h-full z-10 pointer-events-none"></canvas>
+            
+            <div id="snap-indicator" class="snap-indicator"></div>
+
+            <div id="tools-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20 overflow-hidden">
+                <!-- THƯỚC THẲNG -->
+                <div id="ruler-wrapper" class="math-tool-overlay" style="width: 400px; height: 60px;">
+                    <div class="drag-area bg-white/95 border border-slate-400 rounded-md backdrop-blur-sm relative shadow-lg">
+                        <div class="absolute top-0 left-0 w-full h-[2px] bg-blue-500/80"></div>
+                        <div class="absolute bottom-0 left-0 w-full h-[2px] bg-blue-500/80"></div>
+                        <svg id="ruler-svg" width="400" height="60" class="absolute top-0 left-0 pointer-events-none"></svg>
+                    </div>
+                    <div class="rotate-handle"></div>
+                </div>
+
+                <!-- ĐO GÓC -->
+                <div id="protractor-wrapper" class="math-tool-overlay" style="width: 300px; height: 150px;">
+                    <div class="drag-area relative">
+                        <svg id="protractor-svg" width="300" height="150">
+                            <path d="M 0 150 A 150 150 0 0 1 300 150 Z" fill="rgba(255,255,255,0.95)" stroke="#94a3b8" stroke-width="1.5" style="backdrop-filter: blur(4px);"/>
+                            <circle cx="150" cy="145" r="3" fill="#ef4444"/>
+                            <line x1="140" y1="145" x2="160" y2="145" stroke="#333" stroke-width="1.5"/>
+                            <line x1="150" y1="135" x2="150" y2="150" stroke="#333" stroke-width="1.5"/>
+                        </svg>
+                    </div>
+                    <div class="rotate-handle"></div>
+                </div>
+
+                <!-- Ê-KE -->
+                <div id="eke-wrapper" class="math-tool-overlay" style="width: 200px; height: 200px;">
+                    <div class="drag-area relative">
+                        <svg width="200" height="200">
+                            <polygon points="0,0 0,200 200,200" fill="rgba(255,255,255,0.95)" stroke="#94a3b8" stroke-width="1.5" style="backdrop-filter: blur(4px); box-shadow: 0 4px 6px rgba(0,0,0,0.1);"/>
+                            <polygon points="30,60 30,170 140,170" fill="transparent" stroke="#cbd5e1" stroke-width="1.5"/>
+                        </svg>
+                    </div>
+                    <div class="rotate-handle" style="bottom: -15px; left: 100px;"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Render Thước
+            const rulerSvg = document.getElementById('ruler-svg');
+            for(let i=0; i<=380; i+=5) {
+                let isCm = i % 50 === 0;
+                let y2 = isCm ? 15 : (i % 25 === 0 ? 10 : 6);
+                let line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', i+10); line.setAttribute('y1', 0);
+                line.setAttribute('x2', i+10); line.setAttribute('y2', y2);
+                line.setAttribute('stroke', '#333'); line.setAttribute('stroke-width', '1.2');
+                rulerSvg.appendChild(line);
+                if (isCm) {
+                    let text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', i+10); text.setAttribute('y', 28);
+                    text.setAttribute('font-size', '11'); text.setAttribute('font-family', 'Arial, sans-serif');
+                    text.setAttribute('text-anchor', 'middle'); text.setAttribute('fill', '#333');
+                    text.textContent = i/50;
+                    rulerSvg.appendChild(text);
+                }
+            }
+
+            // Render Đo góc
+            const proSvg = document.getElementById('protractor-svg');
+            for(let d=0; d<=180; d+=5) {
+                let rad = d * Math.PI / 180;
+                let isTen = d % 10 === 0;
+                let rIn = isTen ? 135 : 142;
+                let x1 = 150 - 150*Math.cos(rad), y1 = 150 - 150*Math.sin(rad);
+                let x2 = 150 - rIn*Math.cos(rad), y2 = 150 - rIn*Math.sin(rad);
+                let line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+                line.setAttribute('stroke', '#333'); line.setAttribute('stroke-width', '1');
+                proSvg.appendChild(line);
+
+                if (isTen && d > 0 && d < 180) {
+                    let text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    let tx = 150 - 125*Math.cos(rad), ty = 150 - 125*Math.sin(rad);
+                    text.setAttribute('x', tx); text.setAttribute('y', ty + 4);
+                    text.setAttribute('font-size', '10'); text.setAttribute('font-family', 'Arial, sans-serif');
+                    text.setAttribute('text-anchor', 'middle'); text.setAttribute('fill', '#333');
+                    let rot = d <= 90 ? d - 90 : d + 90;
+                    text.setAttribute('transform', `rotate(${rot}, ${tx}, ${ty})`);
+                    text.textContent = d;
+                    proSvg.appendChild(text);
+                }
+            }
+
+            const scrollContainer = document.getElementById('scroll-container');
+            const canvasWrapper = document.getElementById('canvas-wrapper');
+            const canvas = document.getElementById('main-canvas');
+            const pCanvas = document.getElementById('preview-canvas');
+            const ctx = canvas.getContext('2d', {willReadFrequently: true});
+            const pCtx = pCanvas.getContext('2d');
+            const snapIndicator = document.getElementById('snap-indicator');
+
+            let width, height = 10000;
+            let maxDrawnY = 0;
+
+            function resize() {
+                width = canvasWrapper.clientWidth;
+                let imgData = ctx.getImageData(0,0, canvas.width || width, height);
+                canvas.width = pCanvas.width = width; canvas.height = pCanvas.height = height;
+                if(canvas.width > 0) ctx.putImageData(imgData, 0, 0);
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            let currentTool = 'pen', currentColor = '#000000', currentLineW = 2, isDashed = false;
+            let isDrawing = false, startX, startY;
+            let history = [canvas.toDataURL()], historyStep = 0;
+            let lastLineAngle = 0, midPtState = 0, midPt1 = null;
+            
+            // Pan (Con trỏ di chuyển bảng) state
+            let isPanning = false, panStartY = 0, panStartX = 0;
+
+            function saveHistory() {
+                historyStep++; history = history.slice(0, historyStep); history.push(canvas.toDataURL());
+            }
+            function updateMaxY(y) { if(y > maxDrawnY) maxDrawnY = y; }
+
+            document.getElementById('bg-selector').addEventListener('change', e => { canvasWrapper.className = `relative w-full ${e.target.value}`; });
+            
+            const toolBtns = document.querySelectorAll('.tool-btn:not(#undo-btn, #clear-btn)');
+            toolBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    toolBtns.forEach(b => b.classList.remove('btn-active'));
+                    btn.classList.add('btn-active');
+                    currentTool = btn.dataset.tool;
+                    midPtState = 0;
+                    if(currentTool === 'pointer') canvas.style.cursor = 'grab';
+                    else if(currentTool === 'eraser') canvas.style.cursor = 'cell';
+                    else canvas.style.cursor = 'crosshair';
+                });
+            });
+
+            document.querySelectorAll('.color-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    currentColor = btn.dataset.color;
+                    document.querySelectorAll('.color-btn').forEach(b => { b.classList.replace('ring-2', 'border'); b.classList.remove('ring-offset-1', 'ring-blue-500'); });
+                    btn.classList.replace('border', 'ring-2'); btn.classList.add('ring-offset-1', 'ring-blue-500');
+                });
+            });
+
+            document.getElementById('stroke-width').addEventListener('input', e => currentLineW = e.target.value);
+            document.getElementById('dashed-line').addEventListener('change', e => isDashed = e.target.checked);
+            
+            document.getElementById('clear-btn').addEventListener('click', () => { ctx.clearRect(0,0,width,height); maxDrawnY = 0; saveHistory(); });
+            document.getElementById('undo-btn').addEventListener('click', () => {
+                if(historyStep > 0) {
+                    historyStep--;
+                    let img = new Image();
+                    img.onload = () => { ctx.clearRect(0,0,width,height); ctx.drawImage(img,0,0); };
+                    img.src = history[historyStep];
+                }
+            });
+
+            // Xuất PDF
+            document.getElementById('save-pdf-btn').addEventListener('click', () => {
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'pt', 'a4');
+                const pdfW = pdf.internal.pageSize.getWidth(), pdfH = pdf.internal.pageSize.getHeight();
+                const pageHeightInCanvas = width * (pdfH / pdfW);
+                const contentHeight = Math.max(pageHeightInCanvas, maxDrawnY + 150); 
+                const totalPages = Math.ceil(contentHeight / pageHeightInCanvas);
+
+                const sliceCanvas = document.createElement('canvas');
+                sliceCanvas.width = width; sliceCanvas.height = pageHeightInCanvas;
+                const sliceCtx = sliceCanvas.getContext('2d');
+
+                for (let i = 0; i < totalPages; i++) {
+                    if (i > 0) pdf.addPage();
+                    sliceCtx.fillStyle = '#ffffff'; sliceCtx.fillRect(0, 0, width, pageHeightInCanvas);
+                    
+                    if(document.getElementById('bg-selector').value === 'board-bg-grid') {
+                        sliceCtx.fillStyle = '#e2e8f0';
+                        for(let x=0; x<width; x+=20) sliceCtx.fillRect(x,0,1,pageHeightInCanvas);
+                        for(let y=0; y<pageHeightInCanvas; y+=20) sliceCtx.fillRect(0,y,width,1);
+                    }
+                    sliceCtx.drawImage(canvas, 0, i * pageHeightInCanvas, width, pageHeightInCanvas, 0, 0, width, pageHeightInCanvas);
+                    pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pdfW, pdfH);
+                }
+                pdf.save('MathBoard_Export.pdf');
+            });
+
+            const ruler = { active: false, x: 200, y: 150, angle: 0, w: 400, h: 60, el: document.getElementById('ruler-wrapper') };
+            function getSnapPoint(px, py) {
+                if(!ruler.active) return null;
+                let rad = ruler.angle * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+                let hw = ruler.w / 2, hh = ruler.h / 2;
+                let AT = { x: ruler.x - hw*cos + hh*sin, y: ruler.y - hw*sin - hh*cos };
+                let BT = { x: ruler.x + hw*cos + hh*sin, y: ruler.y + hw*sin - hh*cos };
+                let AB = { x: ruler.x - hw*cos - hh*sin, y: ruler.y - hw*sin + hh*cos };
+                let BB = { x: ruler.x + hw*cos - hh*sin, y: ruler.y + hw*sin + hh*cos };
+                
+                function project(A, B) {
+                    let l2 = (A.x - B.x)**2 + (A.y - B.y)**2;
+                    if(l2 === 0) return null;
+                    let t = ((px - A.x)*(B.x - A.x) + (py - A.y)*(B.y - A.y)) / l2;
+                    t = Math.max(0, Math.min(1, t));
+                    let proj = { x: A.x + t*(B.x - A.x), y: A.y + t*(B.y - A.y) };
+                    return { proj, dist: Math.hypot(px - proj.x, py - proj.y) };
+                }
+                let snapT = project(AT, BT), snapB = project(AB, BB);
+                let best = null, minDist = 40;
+                if (snapT && snapT.dist < minDist) { best = snapT.proj; minDist = snapT.dist; }
+                if (snapB && snapB.dist < minDist) { best = snapB.proj; }
+                return best;
+            }
+
+            function applyStyle(c) {
+                if(currentTool === 'highlighter') {
+                    c.strokeStyle = currentColor;
+                    c.lineWidth = Math.max(currentLineW * 3, 12); // Bút highlight to bản
+                    c.lineCap = 'butt'; // Đầu vuông dễ đánh dấu
+                    c.globalAlpha = 0.35; // Trong suốt
+                    c.setLineDash([]);
+                } else {
+                    c.strokeStyle = currentColor;
+                    c.lineWidth = currentLineW;
+                    c.lineCap = 'round'; c.lineJoin = 'round';
+                    c.globalAlpha = 1.0;
+                    c.setLineDash(isDashed ? [8, 8] : []);
+                }
+            }
+
+            function getMouse(e) {
+                const rect = canvasWrapper.getBoundingClientRect();
+                return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            }
+
+            canvasWrapper.addEventListener('mousedown', (e) => {
+                if(e.target.closest('.rotate-handle')) return;
+                
+                // Nếu đang chọn Con trỏ (Pointer/Pan)
+                if(currentTool === 'pointer') {
+                    isPanning = true;
+                    panStartY = e.clientY;
+                    panStartX = e.clientX;
+                    canvas.style.cursor = 'grabbing';
+                    return;
+                }
+
+                let pos = getMouse(e);
+                let snap = getSnapPoint(pos.x, pos.y);
+                
+                if ((currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'line') && snap) {
+                    e.stopPropagation(); e.preventDefault();
+                    pos = snap;
+                } else if (e.target.closest('.math-tool-overlay')) {
+                    return;
+                }
+
+                if (currentTool === 'midpoint') {
+                    if (midPtState === 0) {
+                        midPt1 = pos;
+                        ctx.fillStyle = currentColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, 4, 0, 2*Math.PI); ctx.fill();
+                        midPtState = 1; updateMaxY(pos.y); saveHistory();
+                    } else {
+                        applyStyle(ctx); ctx.beginPath(); ctx.moveTo(midPt1.x, midPt1.y); ctx.lineTo(pos.x, pos.y); ctx.stroke();
+                        ctx.fillStyle = currentColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, 4, 0, 2*Math.PI); ctx.fill();
+                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc((midPt1.x + pos.x)/2, (midPt1.y + pos.y)/2, 5, 0, 2*Math.PI); ctx.fill();
+                        midPtState = 0; updateMaxY(pos.y); saveHistory();
+                    }
+                    return;
+                }
+
+                isDrawing = true; startX = pos.x; startY = pos.y;
+                if (currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'eraser') { 
+                    ctx.beginPath(); ctx.moveTo(pos.x, pos.y); 
+                }
+            }, true);
+
+            window.addEventListener('mousemove', (e) => {
+                if(isPanning) {
+                    scrollContainer.scrollTop -= (e.clientY - panStartY);
+                    scrollContainer.scrollLeft -= (e.clientX - panStartX);
+                    panStartY = e.clientY;
+                    panStartX = e.clientX;
+                    return;
+                }
+
+                let pos = getMouse(e);
+                let snap = getSnapPoint(pos.x, pos.y);
+                
+                if(snap && (currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'line')) {
+                    pos = snap;
+                    snapIndicator.style.display = 'block';
+                    snapIndicator.style.left = pos.x + 'px'; snapIndicator.style.top = pos.y + 'px';
+                } else {
+                    snapIndicator.style.display = 'none';
+                }
+
+                if (currentTool === 'midpoint' && midPtState === 1) {
+                    pCtx.clearRect(0,0,width,height); applyStyle(pCtx); pCtx.setLineDash([5, 5]);
+                    pCtx.beginPath(); pCtx.moveTo(midPt1.x, midPt1.y); pCtx.lineTo(pos.x, pos.y); pCtx.stroke();
+                    return;
+                }
+
+                if (!isDrawing) return;
+
+                if (currentTool === 'pen' || currentTool === 'highlighter') {
+                    applyStyle(ctx); 
+                    ctx.lineTo(pos.x, pos.y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+                    updateMaxY(pos.y);
+                } 
+                else if (currentTool === 'eraser') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.lineWidth = currentLineW * 5; ctx.lineCap = 'round';
+                    ctx.lineTo(pos.x, pos.y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+                    ctx.globalCompositeOperation = 'source-over';
+                } 
+                else {
+                    pCtx.clearRect(0,0,width,height);
+                    applyStyle(pCtx);
+                    if (currentTool === 'line') {
+                        pCtx.beginPath(); pCtx.moveTo(startX, startY); pCtx.lineTo(pos.x, pos.y); pCtx.stroke();
+                    } else if (currentTool === 'parallel' || currentTool === 'perpendicular') {
+                        let dist = Math.hypot(pos.x - startX, pos.y - startY);
+                        let angle = currentTool === 'perpendicular' ? lastLineAngle + Math.PI/2 : lastLineAngle;
+                        let mouseA = Math.atan2(pos.y - startY, pos.x - startX);
+                        let diff = Math.atan2(Math.sin(mouseA - angle), Math.cos(mouseA - angle));
+                        let dir = Math.abs(diff) > Math.PI/2 ? -1 : 1;
+                        pCtx.beginPath(); pCtx.moveTo(startX, startY); 
+                        pCtx.lineTo(startX + Math.cos(angle)*dist*dir, startY + Math.sin(angle)*dist*dir); pCtx.stroke();
+                    } else if (currentTool === 'parabola') {
+                        let a = (pos.y - startY) / (Math.pow(pos.x - startX, 2) || 1);
+                        pCtx.beginPath();
+                        for(let dx = -400; dx <= 400; dx += 10) {
+                            let px = startX + dx, py = startY + a*(dx*dx);
+                            dx === -400 ? pCtx.moveTo(px, py) : pCtx.lineTo(px, py);
+                        }
+                        pCtx.stroke();
+                    } else if (currentTool === 'compass') {
+                        pCtx.beginPath(); pCtx.arc(startX, startY, Math.hypot(pos.x - startX, pos.y - startY), 0, 2*Math.PI); pCtx.stroke();
+                    }
+                }
+            });
+
+            window.addEventListener('mouseup', (e) => {
+                if(isPanning) {
+                    isPanning = false;
+                    canvas.style.cursor = currentTool === 'pointer' ? 'grab' : 'crosshair';
+                    return;
+                }
+                if(!isDrawing) return;
+                isDrawing = false;
+                if (currentTool !== 'pen' && currentTool !== 'highlighter' && currentTool !== 'eraser' && currentTool !== 'midpoint') {
+                    ctx.drawImage(pCanvas, 0, 0); pCtx.clearRect(0,0,width,height);
+                    let pos = getMouse(e);
+                    
+                    if (currentTool === 'line') {
+                        let snap = getSnapPoint(pos.x, pos.y);
+                        if(snap) pos = snap;
+                        lastLineAngle = Math.atan2(pos.y - startY, pos.x - startX);
+                    }
+                    
+                    if(currentTool === 'parabola') updateMaxY(Math.max(startY, pos.y));
+                    else if(currentTool === 'compass') updateMaxY(startY + Math.hypot(pos.x - startX, pos.y - startY));
+                    else updateMaxY(pos.y);
+                }
+                saveHistory();
+            });
+
+            // Kéo thả DOM Tools
+            function initDrag(el, state) {
+                let drag = el.querySelector('.drag-area'), handle = el.querySelector('.rotate-handle');
+                let dragging = false, rotating = false, sx, sy, sEx, sEy, sAng;
+                
+                drag.onmousedown = (e) => {
+                    dragging = true; sx = e.clientX; sy = e.clientY; 
+                    if(state) { sEx = state.x; sEy = state.y; }
+                    else { let r = el.getBoundingClientRect(); let p = canvasWrapper.getBoundingClientRect(); sEx = r.left - p.left; sEy = r.top - p.top; }
+                    el.style.zIndex = 30; e.stopPropagation();
+                };
+                handle.onmousedown = (e) => {
+                    rotating = true; let r = drag.getBoundingClientRect();
+                    sAng = Math.atan2(e.clientY - (r.top+r.height/2), e.clientX - (r.left+r.width/2))*180/Math.PI;
+                    sEy = state ? state.angle : parseFloat(el.dataset.angle || 0);
+                    el.style.zIndex = 30; e.stopPropagation();
+                };
+                document.addEventListener('mousemove', e => {
+                    if (dragging) {
+                        if(state) { state.x = sEx + (e.clientX - sx); state.y = sEy + (e.clientY - sy); }
+                        else { el.style.left = `${sEx + (e.clientX - sx)}px`; el.style.top = `${sEy + (e.clientY - sy)}px`; }
+                    }
+                    if (rotating) {
+                        let r = drag.getBoundingClientRect();
+                        let a = Math.atan2(e.clientY - (r.top+r.height/2), e.clientX - (r.left+r.width/2))*180/Math.PI;
+                        if(state) state.angle = sEy + (a - sAng); else el.dataset.angle = sEy + (a - sAng);
+                    }
+                    if(dragging || rotating) {
+                        if(state) el.style.transform = `translate(${state.x - state.w/2}px, ${state.y - state.h/2}px) rotate(${state.angle}deg)`;
+                        else el.style.transform = `rotate(${el.dataset.angle}deg)`;
+                    }
+                });
+                document.addEventListener('mouseup', () => { dragging = false; rotating = false; el.style.zIndex = 20; });
+            }
+
+            initDrag(ruler.el, ruler);
+            initDrag(document.getElementById('protractor-wrapper'));
+            initDrag(document.getElementById('eke-wrapper'));
+
+            document.querySelectorAll('.math-toggle').forEach(chk => {
+                chk.addEventListener('change', e => {
+                    let el = document.getElementById(e.target.dataset.target);
+                    if(e.target.checked) {
+                        el.classList.add('active');
+                        let cx = width/2;
+                        let cy = scrollContainer.scrollTop + scrollContainer.clientHeight/2;
+                        if(e.target.dataset.target === 'ruler-wrapper') {
+                            ruler.active = true; ruler.x = cx; ruler.y = cy;
+                            el.style.transform = `translate(${cx - ruler.w/2}px, ${cy - ruler.h/2}px) rotate(${ruler.angle}deg)`;
+                        } else {
+                            el.style.left = `${cx - 150}px`; el.style.top = `${cy - 100}px`;
+                        }
+                    } else {
+                        el.classList.remove('active');
+                        if(e.target.dataset.target === 'ruler-wrapper') ruler.active = false;
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

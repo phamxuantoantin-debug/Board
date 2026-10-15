@@ -353,71 +353,75 @@
                 return { x: e.clientX - rect.left, y: e.clientY - rect.top };
             }
 
-            canvasWrapper.addEventListener('mousedown', (e) => {
-                if(e.target.closest('.rotate-handle')) return;
+            // === HỖ TRỢ HOÀN HẢO CHO IPAD, APPLE PENCIL & MÁY TÍNH ===
+            function handleStart(clientX, clientY, target, originalEvent) {
+                if(target.closest && target.closest('.rotate-handle')) return;
                 
-                // Nếu đang chọn Con trỏ (Pointer/Pan)
+                // Nếu chọn chế độ Con trỏ di chuyển (Pan)
                 if(currentTool === 'pointer') {
                     isPanning = true;
-                    panStartY = e.clientY;
-                    panStartX = e.clientX;
-                    canvas.style.cursor = 'grabbing';
+                    panStartY = clientY;
+                    panStartX = clientX;
                     return;
                 }
 
-                let pos = getMouse(e);
-                let snap = getSnapPoint(pos.x, pos.y);
-                
+                const rect = canvasWrapper.getBoundingClientRect();
+                let x = clientX - rect.left;
+                let y = clientY - rect.top;
+
+                let snap = getSnapPoint(x, y);
                 if ((currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'line') && snap) {
-                    e.stopPropagation(); e.preventDefault();
-                    pos = snap;
-                } else if (e.target.closest('.math-tool-overlay')) {
+                    if(originalEvent) originalEvent.preventDefault();
+                    x = snap.x; y = snap.y;
+                } else if (target.closest && target.closest('.math-tool-overlay')) {
                     return;
                 }
 
                 if (currentTool === 'midpoint') {
                     if (midPtState === 0) {
-                        midPt1 = pos;
-                        ctx.fillStyle = currentColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, 4, 0, 2*Math.PI); ctx.fill();
-                        midPtState = 1; updateMaxY(pos.y); saveHistory();
+                        midPt1 = {x, y};
+                        ctx.fillStyle = currentColor; ctx.beginPath(); ctx.arc(x, y, 4, 0, 2*Math.PI); ctx.fill();
+                        midPtState = 1; updateMaxY(y); saveHistory();
                     } else {
-                        applyStyle(ctx); ctx.beginPath(); ctx.moveTo(midPt1.x, midPt1.y); ctx.lineTo(pos.x, pos.y); ctx.stroke();
-                        ctx.fillStyle = currentColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, 4, 0, 2*Math.PI); ctx.fill();
-                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc((midPt1.x + pos.x)/2, (midPt1.y + pos.y)/2, 5, 0, 2*Math.PI); ctx.fill();
-                        midPtState = 0; updateMaxY(pos.y); saveHistory();
+                        applyStyle(ctx); ctx.beginPath(); ctx.moveTo(midPt1.x, midPt1.y); ctx.lineTo(x, y); ctx.stroke();
+                        ctx.fillStyle = currentColor; ctx.beginPath(); ctx.arc(x, y, 4, 0, 2*Math.PI); ctx.fill();
+                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc((midPt1.x + x)/2, (midPt1.y + y)/2, 5, 0, 2*Math.PI); ctx.fill();
+                        midPtState = 0; updateMaxY(y); saveHistory();
                     }
                     return;
                 }
 
-                isDrawing = true; startX = pos.x; startY = pos.y;
+                isDrawing = true; startX = x; startY = y;
                 if (currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'eraser') { 
-                    ctx.beginPath(); ctx.moveTo(pos.x, pos.y); 
+                    ctx.beginPath(); ctx.moveTo(x, y); 
                 }
-            }, true);
+            }
 
-            window.addEventListener('mousemove', (e) => {
+            function handleMove(clientX, clientY) {
                 if(isPanning) {
-                    scrollContainer.scrollTop -= (e.clientY - panStartY);
-                    scrollContainer.scrollLeft -= (e.clientX - panStartX);
-                    panStartY = e.clientY;
-                    panStartX = e.clientX;
+                    scrollContainer.scrollTop -= (clientY - panStartY);
+                    scrollContainer.scrollLeft -= (clientX - panStartX);
+                    panStartY = clientY;
+                    panStartX = clientX;
                     return;
                 }
 
-                let pos = getMouse(e);
-                let snap = getSnapPoint(pos.x, pos.y);
-                
+                const rect = canvasWrapper.getBoundingClientRect();
+                let x = clientX - rect.left;
+                let y = clientY - rect.top;
+
+                let snap = getSnapPoint(x, y);
                 if(snap && (currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'line')) {
-                    pos = snap;
+                    x = snap.x; y = snap.y;
                     snapIndicator.style.display = 'block';
-                    snapIndicator.style.left = pos.x + 'px'; snapIndicator.style.top = pos.y + 'px';
+                    snapIndicator.style.left = x + 'px'; snapIndicator.style.top = y + 'px';
                 } else {
                     snapIndicator.style.display = 'none';
                 }
 
                 if (currentTool === 'midpoint' && midPtState === 1) {
                     pCtx.clearRect(0,0,width,height); applyStyle(pCtx); pCtx.setLineDash([5, 5]);
-                    pCtx.beginPath(); pCtx.moveTo(midPt1.x, midPt1.y); pCtx.lineTo(pos.x, pos.y); pCtx.stroke();
+                    pCtx.beginPath(); pCtx.moveTo(midPt1.x, midPt1.y); pCtx.lineTo(x, y); pCtx.stroke();
                     return;
                 }
 
@@ -425,32 +429,32 @@
 
                 if (currentTool === 'pen' || currentTool === 'highlighter') {
                     applyStyle(ctx); 
-                    ctx.lineTo(pos.x, pos.y); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
-                    updateMaxY(pos.y);
+                    ctx.lineTo(x, y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(x, y);
+                    updateMaxY(y);
                 } 
                 else if (currentTool === 'eraser') {
                     ctx.globalCompositeOperation = 'destination-out';
                     ctx.lineWidth = currentLineW * 5; ctx.lineCap = 'round';
-                    ctx.lineTo(pos.x, pos.y); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+                    ctx.lineTo(x, y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(x, y);
                     ctx.globalCompositeOperation = 'source-over';
                 } 
                 else {
                     pCtx.clearRect(0,0,width,height);
                     applyStyle(pCtx);
                     if (currentTool === 'line') {
-                        pCtx.beginPath(); pCtx.moveTo(startX, startY); pCtx.lineTo(pos.x, pos.y); pCtx.stroke();
+                        pCtx.beginPath(); pCtx.moveTo(startX, startY); pCtx.lineTo(x, y); pCtx.stroke();
                     } else if (currentTool === 'parallel' || currentTool === 'perpendicular') {
-                        let dist = Math.hypot(pos.x - startX, pos.y - startY);
+                        let dist = Math.hypot(x - startX, y - startY);
                         let angle = currentTool === 'perpendicular' ? lastLineAngle + Math.PI/2 : lastLineAngle;
-                        let mouseA = Math.atan2(pos.y - startY, pos.x - startX);
+                        let mouseA = Math.atan2(y - startY, x - startX);
                         let diff = Math.atan2(Math.sin(mouseA - angle), Math.cos(mouseA - angle));
                         let dir = Math.abs(diff) > Math.PI/2 ? -1 : 1;
                         pCtx.beginPath(); pCtx.moveTo(startX, startY); 
                         pCtx.lineTo(startX + Math.cos(angle)*dist*dir, startY + Math.sin(angle)*dist*dir); pCtx.stroke();
                     } else if (currentTool === 'parabola') {
-                        let a = (pos.y - startY) / (Math.pow(pos.x - startX, 2) || 1);
+                        let a = (y - startY) / (Math.pow(x - startX, 2) || 1);
                         pCtx.beginPath();
                         for(let dx = -400; dx <= 400; dx += 10) {
                             let px = startX + dx, py = startY + a*(dx*dx);
@@ -458,12 +462,12 @@
                         }
                         pCtx.stroke();
                     } else if (currentTool === 'compass') {
-                        pCtx.beginPath(); pCtx.arc(startX, startY, Math.hypot(pos.x - startX, pos.y - startY), 0, 2*Math.PI); pCtx.stroke();
+                        pCtx.beginPath(); pCtx.arc(startX, startY, Math.hypot(x - startX, y - startY), 0, 2*Math.PI); pCtx.stroke();
                     }
                 }
-            });
+            }
 
-            window.addEventListener('mouseup', (e) => {
+            function handleEnd(clientX, clientY) {
                 if(isPanning) {
                     isPanning = false;
                     canvas.style.cursor = currentTool === 'pointer' ? 'grab' : 'crosshair';
@@ -471,21 +475,47 @@
                 }
                 if(!isDrawing) return;
                 isDrawing = false;
+                
                 if (currentTool !== 'pen' && currentTool !== 'highlighter' && currentTool !== 'eraser' && currentTool !== 'midpoint') {
                     ctx.drawImage(pCanvas, 0, 0); pCtx.clearRect(0,0,width,height);
-                    let pos = getMouse(e);
+                    const rect = canvasWrapper.getBoundingClientRect();
+                    let x = clientX - rect.left, y = clientY - rect.top;
                     
                     if (currentTool === 'line') {
-                        let snap = getSnapPoint(pos.x, pos.y);
-                        if(snap) pos = snap;
-                        lastLineAngle = Math.atan2(pos.y - startY, pos.x - startX);
+                        let snap = getSnapPoint(x, y);
+                        if(snap) { x = snap.x; y = snap.y; }
+                        lastLineAngle = Math.atan2(y - startY, x - startX);
                     }
                     
-                    if(currentTool === 'parabola') updateMaxY(Math.max(startY, pos.y));
-                    else if(currentTool === 'compass') updateMaxY(startY + Math.hypot(pos.x - startX, pos.y - startY));
-                    else updateMaxY(pos.y);
+                    if(currentTool === 'parabola') updateMaxY(Math.max(startY, y));
+                    else if(currentTool === 'compass') updateMaxY(startY + Math.hypot(x - startX, y - startY));
+                    else updateMaxY(y);
                 }
                 saveHistory();
+            }
+
+            // Gán sự kiện cho cả Máy tính (Mouse) và iPad (Touch)
+            canvasWrapper.addEventListener('mousedown', (e) => handleStart(e.clientX, e.clientY, e.target, e), true);
+            canvasWrapper.addEventListener('touchstart', (e) => {
+                if(e.touches.length === 1) {
+                    let touch = e.touches[0];
+                    handleStart(touch.clientX, touch.clientY, e.target, e);
+                }
+            }, { passive: false });
+
+            window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+            window.addEventListener('touchmove', (e) => {
+                if(e.touches.length === 1) {
+                    let touch = e.touches[0];
+                    handleMove(touch.clientX, touch.clientY);
+                    if(isDrawing || currentTool === 'pointer') e.preventDefault(); 
+                }
+            }, { passive: false });
+
+            window.addEventListener('mouseup', (e) => handleEnd(e.clientX, e.clientY));
+            window.addEventListener('touchend', (e) => {
+                let touch = e.changedTouches[0] || (e.touches.length > 0 ? e.touches[0] : {clientX: startX, clientY: startY});
+                handleEnd(touch.clientX, clientY);
             });
 
             // Kéo thả DOM Tools

@@ -9,7 +9,7 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         
-        body { font-family: 'Inter', sans-serif; user-select: none; overflow: hidden; background: #f3f4f6; }
+        body { font-family: 'Inter', sans-serif; user-select: none; overflow: hidden; background: #f3f4f6; touch-action: none; }
 
         .board-bg-grid { background-color: #ffffff; background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px); background-size: 20px 20px; }
         .board-bg-white { background-color: #ffffff; }
@@ -17,7 +17,7 @@
 
         .math-tool-overlay { position: absolute; display: none; z-index: 20; pointer-events: auto; transform-origin: center center; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15)); }
         .math-tool-overlay.active { display: block; }
-        .drag-area { cursor: grab; width: 100%; height: 100%; position: relative; }
+        .drag-area { cursor: grab; width: 100%; height: 100%; position: relative; touch-action: none; }
         .drag-area:active { cursor: grabbing; }
 
         .rotate-handle {
@@ -25,10 +25,28 @@
             border: 2px solid white; border-radius: 50%; cursor: grab; 
             bottom: -35px; left: 50%; transform: translateX(-50%); 
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s; touch-action: none;
         }
         .rotate-handle:hover { background: #2563eb; }
         .rotate-handle::after { content: "↻"; color: white; font-size: 16px; font-weight: bold; }
+
+        /* Style Hình dán (Sticker) hiển thị nổi bật và tương tác tốt */
+        .sticker-object {
+            position: absolute; display: inline-block; z-index: 60;
+            border: 2px dashed #3b82f6; touch-action: none; padding: 2px; background: rgba(255,255,255,0.9);
+        }
+        .sticker-object img {
+            display: block; width: 100%; height: 100%; pointer-events: none;
+        }
+        .sticker-ctrl {
+            position: absolute; width: 28px; height: 28px; color: white;
+            border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 14px; cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3); z-index: 70; user-select: none; touch-action: none;
+        }
+        .sticker-object.selected .sticker-ctrl { display: flex; }
+        .ctrl-resize { bottom: -14px; right: -14px; cursor: se-resize; background: #10b981; }
+        .ctrl-rotate { top: -35px; left: 50%; transform: translateX(-50%); background: #3b82f6; }
+        .ctrl-delete { top: -14px; right: -14px; background: #ef4444; }
 
         .toolbar-scroll::-webkit-scrollbar { height: 6px; }
         .toolbar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -40,6 +58,7 @@
         .tool-btn:hover { background: #f1f5f9; border-color: #e2e8f0; }
         .btn-active { background: #eff6ff !important; border-color: #93c5fd !important; color: #2563eb; }
         
+        #scroll-container { overflow-y: auto; -webkit-overflow-scrolling: touch; }
         #scroll-container::-webkit-scrollbar { width: 10px; }
         #scroll-container::-webkit-scrollbar-track { background: #e2e8f0; }
         #scroll-container::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; border: 2px solid #e2e8f0; }
@@ -51,7 +70,7 @@
 <body class="h-screen w-screen flex flex-col">
 
     <!-- THANH CÔNG CỤ NGANG -->
-    <header class="h-14 bg-white border-b border-gray-200 flex items-center px-3 z-40 shrink-0 shadow-sm toolbar-scroll overflow-x-auto whitespace-nowrap">
+    <header class="h-14 bg-white border-b border-gray-200 flex items-center px-3 z-50 shrink-0 shadow-sm toolbar-scroll overflow-x-auto whitespace-nowrap">
         <div class="flex items-center gap-2 shrink-0">
             <span class="font-bold text-blue-600 text-lg mr-2">📐 XuanBoard</span>
             <select id="bg-selector" class="border border-gray-300 rounded text-sm px-2 py-1 outline-none text-gray-700 bg-gray-50 font-medium">
@@ -67,18 +86,21 @@
         <div class="flex items-center gap-1 shrink-0">
             <button id="undo-btn" class="tool-btn text-gray-600" title="Hoàn tác">↩️</button>
             <button id="clear-btn" class="tool-btn text-red-500" title="Xóa toàn bộ bảng">🗑️</button>
+            <!-- Nút chọn ảnh từ thư viện -->
+            <label class="tool-btn text-green-600 cursor-pointer" title="Chèn hình từ thư viện">
+                🖼️ <input type="file" id="image-upload" accept="image/*" class="hidden">
+            </label>
         </div>
 
         <div class="divider"></div>
 
-        <!-- CÔNG CỤ VẺ & TƯƠNG TÁC -->
         <div class="flex items-center gap-1 shrink-0">
             <button class="tool-btn" data-tool="pointer" title="Con trỏ di chuyển (Pan)">✋</button>
             <button class="tool-btn btn-active" data-tool="pen" title="Bút viết">✏️</button>
-            <button class="tool-btn text-yellow-500" data-tool="highlighter" title="Bút Highlight (Làm nổi bật)">🖍️</button>
+            <button class="tool-btn text-yellow-500" data-tool="highlighter" title="Bút Highlight">🖍️</button>
             <button class="tool-btn" data-tool="eraser" title="Tẩy">🧽</button>
             <button class="tool-btn text-purple-600" data-tool="line" title="Kẻ đoạn thẳng">📏</button>
-            <button class="tool-btn" data-tool="midpoint" title="Trung điểm (Chấm 2 điểm)">⚄</button>
+            <button class="tool-btn" data-tool="midpoint" title="Trung điểm">⚄</button>
             <button class="tool-btn text-blue-600" data-tool="parallel" title="Song song">⏸️</button>
             <button class="tool-btn text-gray-700" data-tool="perpendicular" title="Vuông góc">⏊</button>
             <button class="tool-btn text-blue-400" data-tool="parabola" title="Parabol">📈</button>
@@ -121,10 +143,12 @@
             <canvas id="main-canvas" class="absolute top-0 left-0 w-full h-full z-0 cursor-crosshair"></canvas>
             <canvas id="preview-canvas" class="absolute top-0 left-0 w-full h-full z-10 pointer-events-none"></canvas>
             
+            <!-- Lớp chứa hình dán ở z-index cao (50) để hiển thị và thao tác rõ ràng -->
+            <div id="stickers-layer" class="absolute top-0 left-0 w-full h-full pointer-events-auto z-50"></div>
+
             <div id="snap-indicator" class="snap-indicator"></div>
 
             <div id="tools-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20 overflow-hidden">
-                <!-- THƯỚC THẲNG -->
                 <div id="ruler-wrapper" class="math-tool-overlay" style="width: 400px; height: 60px;">
                     <div class="drag-area bg-white/95 border border-slate-400 rounded-md backdrop-blur-sm relative shadow-lg">
                         <div class="absolute top-0 left-0 w-full h-[2px] bg-blue-500/80"></div>
@@ -134,7 +158,6 @@
                     <div class="rotate-handle"></div>
                 </div>
 
-                <!-- ĐO GÓC -->
                 <div id="protractor-wrapper" class="math-tool-overlay" style="width: 300px; height: 150px;">
                     <div class="drag-area relative">
                         <svg id="protractor-svg" width="300" height="150">
@@ -147,7 +170,6 @@
                     <div class="rotate-handle"></div>
                 </div>
 
-                <!-- Ê-KE -->
                 <div id="eke-wrapper" class="math-tool-overlay" style="width: 200px; height: 200px;">
                     <div class="drag-area relative">
                         <svg width="200" height="200">
@@ -163,7 +185,6 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Render Thước
             const rulerSvg = document.getElementById('ruler-svg');
             for(let i=0; i<=380; i+=5) {
                 let isCm = i % 50 === 0;
@@ -183,7 +204,6 @@
                 }
             }
 
-            // Render Đo góc
             const proSvg = document.getElementById('protractor-svg');
             for(let d=0; d<=180; d+=5) {
                 let rad = d * Math.PI / 180;
@@ -212,6 +232,7 @@
 
             const scrollContainer = document.getElementById('scroll-container');
             const canvasWrapper = document.getElementById('canvas-wrapper');
+            const stickersLayer = document.getElementById('stickers-layer');
             const canvas = document.getElementById('main-canvas');
             const pCanvas = document.getElementById('preview-canvas');
             const ctx = canvas.getContext('2d', {willReadFrequently: true});
@@ -234,8 +255,6 @@
             let isDrawing = false, startX, startY;
             let history = [canvas.toDataURL()], historyStep = 0;
             let lastLineAngle = 0, midPtState = 0, midPt1 = null;
-            
-            // Pan (Con trỏ di chuyển bảng) state
             let isPanning = false, panStartY = 0, panStartX = 0;
 
             function saveHistory() {
@@ -243,10 +262,138 @@
             }
             function updateMaxY(y) { if(y > maxDrawnY) maxDrawnY = y; }
 
+            // --- TÍNH NĂNG CHÈN ẢNH TỪ THƯ VIỆN & PASTE ---
+            document.getElementById('image-upload').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => createSticker(event.target.result);
+                    reader.readAsDataURL(file);
+                }
+                e.target.value = ''; // Reset input để chọn lại được ảnh cũ nếu muốn
+            });
+
+            window.addEventListener('paste', (e) => {
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        const blob = items[i].getAsFile();
+                        const reader = new FileReader();
+                        reader.onload = (event) => createSticker(event.target.result);
+                        reader.readAsDataURL(blob);
+                        e.preventDefault();
+                    }
+                }
+            });
+
+            function createSticker(src) {
+                const sticker = document.createElement('div');
+                sticker.className = 'sticker-object selected';
+                let startX = 100, startY = scrollContainer.scrollTop + 100;
+                let curW = 300, curH = 200, curRot = 0;
+                
+                sticker.style.left = startX + 'px';
+                sticker.style.top = startY + 'px';
+                sticker.style.width = curW + 'px';
+
+                const img = document.createElement('img');
+                img.src = src;
+                img.onload = () => {
+                    let ratio = img.naturalHeight / img.naturalWidth;
+                    curH = curW * ratio;
+                    sticker.style.height = curH + 'px';
+                    updateMaxY(startY + curH);
+                };
+                sticker.appendChild(img);
+
+                const delBtn = document.createElement('div');
+                delBtn.className = 'sticker-ctrl ctrl-delete';
+                delBtn.innerHTML = '×';
+                
+                const resizeBtn = document.createElement('div');
+                resizeBtn.className = 'sticker-ctrl ctrl-resize';
+                resizeBtn.innerHTML = '⤢';
+
+                const rotateBtn = document.createElement('div');
+                rotateBtn.className = 'sticker-ctrl ctrl-rotate';
+                rotateBtn.innerHTML = '↻';
+
+                sticker.appendChild(delBtn);
+                sticker.appendChild(resizeBtn);
+                sticker.appendChild(rotateBtn);
+
+                let actionType = null;
+                let startMouseX, startMouseY, origX, origY, origW;
+
+                function startAction(clientX, clientY, type, e) {
+                    actionType = type;
+                    startMouseX = clientX; startMouseY = clientY;
+                    document.querySelectorAll('.sticker-object').forEach(s => s.classList.remove('selected'));
+                    sticker.classList.add('selected');
+                    sticker.style.zIndex = 65;
+                    
+                    if(type === 'drag') {
+                        origX = parseFloat(sticker.style.left);
+                        origY = parseFloat(sticker.style.top);
+                    } else if(type === 'resize') {
+                        origW = sticker.offsetWidth;
+                    }
+                    if(e) e.stopPropagation();
+                }
+
+                function moveAction(clientX, clientY) {
+                    if(!actionType) return;
+                    let dx = clientX - startMouseX;
+                    let dy = clientY - startMouseY;
+
+                    if(actionType === 'drag') {
+                        sticker.style.left = (origX + dx) + 'px';
+                        sticker.style.top = (origY + dy) + 'px';
+                    } else if(actionType === 'resize') {
+                        let newW = Math.max(80, origW + dx);
+                        sticker.style.width = newW + 'px';
+                    } else if(actionType === 'rotate') {
+                        let rect = sticker.getBoundingClientRect();
+                        let cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+                        let angle = Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI;
+                        curRot = angle + 90;
+                        sticker.style.transform = `rotate(${curRot}deg)`;
+                    }
+                }
+
+                function endAction() { actionType = null; sticker.style.zIndex = 60; }
+
+                // Gắn sự kiện Chuột & Cảm ứng trực tiếp
+                sticker.onmousedown = (e) => startAction(e.clientX, e.clientY, 'drag', e);
+                delBtn.onclick = (e) => { e.stopPropagation(); sticker.remove(); };
+                resizeBtn.onmousedown = (e) => startAction(e.clientX, e.clientY, 'resize', e);
+                rotateBtn.onmousedown = (e) => startAction(e.clientX, e.clientY, 'rotate', e);
+
+                sticker.ontouchstart = (e) => { if(e.touches.length === 1) startAction(e.touches[0].clientX, e.touches[0].clientY, 'drag', e); };
+                delBtn.ontouchstart = (e) => { e.stopPropagation(); sticker.remove(); };
+                resizeBtn.ontouchstart = (e) => { if(e.touches.length === 1) startAction(e.touches[0].clientX, e.touches[0].clientY, 'resize', e); };
+                rotateBtn.ontouchstart = (e) => { if(e.touches.length === 1) startAction(e.touches[0].clientX, e.touches[0].clientY, 'rotate', e); };
+
+                document.addEventListener('mousemove', (e) => moveAction(e.clientX, e.clientY));
+                document.addEventListener('touchmove', (e) => { if(actionType && e.touches.length === 1) { moveAction(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+
+                document.addEventListener('mouseup', endAction);
+                document.addEventListener('touchend', endAction);
+
+                canvasWrapper.onclick = (e) => {
+                    if(e.target === canvasWrapper || e.target === canvas) {
+                        document.querySelectorAll('.sticker-object').forEach(s => s.classList.remove('selected'));
+                    }
+                };
+
+                stickersLayer.appendChild(sticker);
+            }
+
             document.getElementById('bg-selector').addEventListener('change', e => { canvasWrapper.className = `relative w-full ${e.target.value}`; });
             
             const toolBtns = document.querySelectorAll('.tool-btn:not(#undo-btn, #clear-btn)');
             toolBtns.forEach(btn => {
+                if(btn.querySelector('input')) return;
                 btn.addEventListener('click', () => {
                     toolBtns.forEach(b => b.classList.remove('btn-active'));
                     btn.classList.add('btn-active');
@@ -269,7 +416,12 @@
             document.getElementById('stroke-width').addEventListener('input', e => currentLineW = e.target.value);
             document.getElementById('dashed-line').addEventListener('change', e => isDashed = e.target.checked);
             
-            document.getElementById('clear-btn').addEventListener('click', () => { ctx.clearRect(0,0,width,height); maxDrawnY = 0; saveHistory(); });
+            document.getElementById('clear-btn').addEventListener('click', () => { 
+                ctx.clearRect(0,0,width,height); maxDrawnY = 0; 
+                stickersLayer.innerHTML = ''; 
+                saveHistory(); 
+            });
+
             document.getElementById('undo-btn').addEventListener('click', () => {
                 if(historyStep > 0) {
                     historyStep--;
@@ -279,9 +431,11 @@
                 }
             });
 
-            // Xuất PDF
+            // Lưu PDF
             document.getElementById('save-pdf-btn').addEventListener('click', () => {
                 const { jsPDF } = window.jspdf;
+                document.querySelectorAll('.sticker-object').forEach(s => s.classList.remove('selected'));
+                
                 const pdf = new jsPDF('p', 'pt', 'a4');
                 const pdfW = pdf.internal.pageSize.getWidth(), pdfH = pdf.internal.pageSize.getHeight();
                 const pageHeightInCanvas = width * (pdfH / pdfW);
@@ -335,9 +489,9 @@
             function applyStyle(c) {
                 if(currentTool === 'highlighter') {
                     c.strokeStyle = currentColor;
-                    c.lineWidth = Math.max(currentLineW * 3, 12); // Bút highlight to bản
-                    c.lineCap = 'butt'; // Đầu vuông dễ đánh dấu
-                    c.globalAlpha = 0.35; // Trong suốt
+                    c.lineWidth = Math.max(currentLineW * 3, 12);
+                    c.lineCap = 'butt';
+                    c.globalAlpha = 0.35;
                     c.setLineDash([]);
                 } else {
                     c.strokeStyle = currentColor;
@@ -353,11 +507,9 @@
                 return { x: e.clientX - rect.left, y: e.clientY - rect.top };
             }
 
-            // === HỖ TRỢ HOÀN HẢO CHO IPAD, APPLE PENCIL & MÁY TÍNH ===
             function handleStart(clientX, clientY, target, originalEvent) {
-                if(target.closest && target.closest('.rotate-handle')) return;
+                if(target.closest && (target.closest('.rotate-handle') || target.closest('.sticker-object'))) return;
                 
-                // Nếu chọn chế độ Con trỏ di chuyển (Pan)
                 if(currentTool === 'pointer') {
                     isPanning = true;
                     panStartY = clientY;
@@ -468,11 +620,7 @@
             }
 
             function handleEnd(clientX, clientY) {
-                if(isPanning) {
-                    isPanning = false;
-                    canvas.style.cursor = currentTool === 'pointer' ? 'grab' : 'crosshair';
-                    return;
-                }
+                if(isPanning) { isPanning = false; return; }
                 if(!isDrawing) return;
                 isDrawing = false;
                 
@@ -494,7 +642,6 @@
                 saveHistory();
             }
 
-            // Gán sự kiện cho cả Máy tính (Mouse) và iPad (Touch)
             canvasWrapper.addEventListener('mousedown', (e) => handleStart(e.clientX, e.clientY, e.target, e), true);
             canvasWrapper.addEventListener('touchstart', (e) => {
                 if(e.touches.length === 1) {
@@ -515,42 +662,56 @@
             window.addEventListener('mouseup', (e) => handleEnd(e.clientX, e.clientY));
             window.addEventListener('touchend', (e) => {
                 let touch = e.changedTouches[0] || (e.touches.length > 0 ? e.touches[0] : {clientX: startX, clientY: startY});
-                handleEnd(touch.clientX, clientY);
+                handleEnd(touch.clientX, touch.clientY);
             });
 
-            // Kéo thả DOM Tools
+            // Kéo thả DOM Tools (Thước, Đo góc, Ê-ke)
             function initDrag(el, state) {
                 let drag = el.querySelector('.drag-area'), handle = el.querySelector('.rotate-handle');
                 let dragging = false, rotating = false, sx, sy, sEx, sEy, sAng;
                 
-                drag.onmousedown = (e) => {
-                    dragging = true; sx = e.clientX; sy = e.clientY; 
-                    if(state) { sEx = state.x; sEy = state.y; }
-                    else { let r = el.getBoundingClientRect(); let p = canvasWrapper.getBoundingClientRect(); sEx = r.left - p.left; sEy = r.top - p.top; }
-                    el.style.zIndex = 30; e.stopPropagation();
-                };
-                handle.onmousedown = (e) => {
-                    rotating = true; let r = drag.getBoundingClientRect();
-                    sAng = Math.atan2(e.clientY - (r.top+r.height/2), e.clientX - (r.left+r.width/2))*180/Math.PI;
-                    sEy = state ? state.angle : parseFloat(el.dataset.angle || 0);
-                    el.style.zIndex = 30; e.stopPropagation();
-                };
-                document.addEventListener('mousemove', e => {
+                function startAction(clientX, clientY, isRotate) {
+                    if (isRotate) {
+                        rotating = true;
+                        let r = drag.getBoundingClientRect();
+                        sAng = Math.atan2(clientY - (r.top+r.height/2), clientX - (r.left+r.width/2))*180/Math.PI;
+                        sEy = state ? state.angle : parseFloat(el.dataset.angle || 0);
+                    } else {
+                        dragging = true; 
+                        sx = clientX; sy = clientY; 
+                        if(state) { sEx = state.x; sEy = state.y; }
+                        else { let r = el.getBoundingClientRect(); let p = canvasWrapper.getBoundingClientRect(); sEx = r.left - p.left; sEy = r.top - p.top; }
+                    }
+                    el.style.zIndex = 30;
+                }
+
+                function moveAction(clientX, clientY) {
                     if (dragging) {
-                        if(state) { state.x = sEx + (e.clientX - sx); state.y = sEy + (e.clientY - sy); }
-                        else { el.style.left = `${sEx + (e.clientX - sx)}px`; el.style.top = `${sEy + (e.clientY - sy)}px`; }
+                        if(state) { state.x = sEx + (clientX - sx); state.y = sEy + (clientY - sy); }
+                        else { el.style.left = `${sEx + (clientX - sx)}px`; el.style.top = `${sEy + (clientY - sy)}px`; }
                     }
                     if (rotating) {
                         let r = drag.getBoundingClientRect();
-                        let a = Math.atan2(e.clientY - (r.top+r.height/2), e.clientX - (r.left+r.width/2))*180/Math.PI;
+                        let a = Math.atan2(clientY - (r.top+r.height/2), clientX - (r.left+r.width/2))*180/Math.PI;
                         if(state) state.angle = sEy + (a - sAng); else el.dataset.angle = sEy + (a - sAng);
                     }
                     if(dragging || rotating) {
                         if(state) el.style.transform = `translate(${state.x - state.w/2}px, ${state.y - state.h/2}px) rotate(${state.angle}deg)`;
                         else el.style.transform = `rotate(${el.dataset.angle}deg)`;
                     }
-                });
-                document.addEventListener('mouseup', () => { dragging = false; rotating = false; el.style.zIndex = 20; });
+                }
+
+                function endAction() { dragging = false; rotating = false; el.style.zIndex = 20; }
+
+                drag.onmousedown = (e) => { startAction(e.clientX, e.clientY, false); e.stopPropagation(); };
+                handle.onmousedown = (e) => { startAction(e.clientX, e.clientY, true); e.stopPropagation(); };
+                drag.ontouchstart = (e) => { if(e.touches.length === 1) { startAction(e.touches[0].clientX, e.touches[0].clientY, false); e.stopPropagation(); } };
+                handle.ontouchstart = (e) => { if(e.touches.length === 1) { startAction(e.touches[0].clientX, e.touches[0].clientY, true); e.stopPropagation(); } };
+
+                document.addEventListener('mousemove', e => moveAction(e.clientX, e.clientY));
+                document.addEventListener('touchmove', e => { if((dragging || rotating) && e.touches.length === 1) { moveAction(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+                document.addEventListener('mouseup', endAction);
+                document.addEventListener('touchend', endAction);
             }
 
             initDrag(ruler.el, ruler);

@@ -30,10 +30,9 @@
         .rotate-handle:hover { background: #2563eb; }
         .rotate-handle::after { content: "↻"; color: white; font-size: 16px; font-weight: bold; }
 
-        /* Style Hình dán (Sticker) hiển thị nổi bật và tương tác tốt */
         .sticker-object {
-            position: absolute; display: inline-block; z-index: 60;
-            border: 2px dashed #3b82f6; touch-action: none; padding: 2px; background: rgba(255,255,255,0.9);
+            position: absolute; display: inline-block; z-index: 40;
+            border: 2px dashed #3b82f6; touch-action: none; padding: 2px; background: rgba(255,255,255,0.05);
         }
         .sticker-object img {
             display: block; width: 100%; height: 100%; pointer-events: none;
@@ -41,7 +40,7 @@
         .sticker-ctrl {
             position: absolute; width: 28px; height: 28px; color: white;
             border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 14px; cursor: pointer;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3); z-index: 70; user-select: none; touch-action: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3); z-index: 50; user-select: none; touch-action: none;
         }
         .sticker-object.selected .sticker-ctrl { display: flex; }
         .ctrl-resize { bottom: -14px; right: -14px; cursor: se-resize; background: #10b981; }
@@ -86,7 +85,6 @@
         <div class="flex items-center gap-1 shrink-0">
             <button id="undo-btn" class="tool-btn text-gray-600" title="Hoàn tác">↩️</button>
             <button id="clear-btn" class="tool-btn text-red-500" title="Xóa toàn bộ bảng">🗑️</button>
-            <!-- Nút chọn ảnh từ thư viện -->
             <label class="tool-btn text-green-600 cursor-pointer" title="Chèn hình từ thư viện">
                 🖼️ <input type="file" id="image-upload" accept="image/*" class="hidden">
             </label>
@@ -143,9 +141,7 @@
             <canvas id="main-canvas" class="absolute top-0 left-0 w-full h-full z-0 cursor-crosshair"></canvas>
             <canvas id="preview-canvas" class="absolute top-0 left-0 w-full h-full z-10 pointer-events-none"></canvas>
             
-            <!-- Lớp chứa hình dán ở z-index cao (50) để hiển thị và thao tác rõ ràng -->
-            <div id="stickers-layer" class="absolute top-0 left-0 w-full h-full pointer-events-auto z-50"></div>
-
+            <div id="stickers-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-30"></div>
             <div id="snap-indicator" class="snap-indicator"></div>
 
             <div id="tools-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20 overflow-hidden">
@@ -252,7 +248,8 @@
             resize();
 
             let currentTool = 'pen', currentColor = '#000000', currentLineW = 2, isDashed = false;
-            let isDrawing = false, startX, startY;
+            let isDrawing = false;
+            let lastX = 0, lastY = 0; // Biến lưu điểm trước đó để làm mượt nét
             let history = [canvas.toDataURL()], historyStep = 0;
             let lastLineAngle = 0, midPtState = 0, midPt1 = null;
             let isPanning = false, panStartY = 0, panStartX = 0;
@@ -262,7 +259,7 @@
             }
             function updateMaxY(y) { if(y > maxDrawnY) maxDrawnY = y; }
 
-            // --- TÍNH NĂNG CHÈN ẢNH TỪ THƯ VIỆN & PASTE ---
+            // --- CHÈN HÌNH TỪ THƯ VIỆN & PASTE ---
             document.getElementById('image-upload').addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -270,7 +267,7 @@
                     reader.onload = (event) => createSticker(event.target.result);
                     reader.readAsDataURL(file);
                 }
-                e.target.value = ''; // Reset input để chọn lại được ảnh cũ nếu muốn
+                e.target.value = '';
             });
 
             window.addEventListener('paste', (e) => {
@@ -361,9 +358,8 @@
                     }
                 }
 
-                function endAction() { actionType = null; sticker.style.zIndex = 60; }
+                function endAction() { actionType = null; sticker.style.zIndex = 40; }
 
-                // Gắn sự kiện Chuột & Cảm ứng trực tiếp
                 sticker.onmousedown = (e) => startAction(e.clientX, e.clientY, 'drag', e);
                 delBtn.onclick = (e) => { e.stopPropagation(); sticker.remove(); };
                 resizeBtn.onmousedown = (e) => startAction(e.clientX, e.clientY, 'resize', e);
@@ -507,6 +503,7 @@
                 return { x: e.clientX - rect.left, y: e.clientY - rect.top };
             }
 
+            // --- THUẬT TOÁN VẼ MƯỢT MÀ (KHÔNG GẤP KHÚC) ---
             function handleStart(clientX, clientY, target, originalEvent) {
                 if(target.closest && (target.closest('.rotate-handle') || target.closest('.sticker-object'))) return;
                 
@@ -543,9 +540,16 @@
                     return;
                 }
 
-                isDrawing = true; startX = x; startY = y;
-                if (currentTool === 'pen' || currentTool === 'highlighter' || currentTool === 'eraser') { 
-                    ctx.beginPath(); ctx.moveTo(x, y); 
+                isDrawing = true; 
+                startX = x; startY = y;
+                lastX = x; lastY = y;
+
+                if (currentTool === 'pen' || currentTool === 'highlighter') { 
+                    ctx.beginPath(); 
+                    ctx.moveTo(x, y); 
+                } else if (currentTool === 'eraser') {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
                 }
             }
 
@@ -579,17 +583,24 @@
 
                 if (!isDrawing) return;
 
+                // NÉT VẼ DÙNG QUADRATIC CURVE GIÚP MƯỢT MÀ KHÔNG BỊ GẤP KHÚC
                 if (currentTool === 'pen' || currentTool === 'highlighter') {
-                    applyStyle(ctx); 
-                    ctx.lineTo(x, y); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(x, y);
+                    applyStyle(ctx);
+                    let xc = (lastX + x) / 2;
+                    let yc = (lastY + y) / 2;
+                    ctx.quadraticCurveTo(lastX, lastY, xc, yc);
+                    ctx.stroke();
+                    lastX = x; lastY = y;
                     updateMaxY(y);
                 } 
                 else if (currentTool === 'eraser') {
                     ctx.globalCompositeOperation = 'destination-out';
-                    ctx.lineWidth = currentLineW * 5; ctx.lineCap = 'round';
-                    ctx.lineTo(x, y); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(x, y);
+                    ctx.lineWidth = currentLineW * 5; 
+                    let xc = (lastX + x) / 2;
+                    let yc = (lastY + y) / 2;
+                    ctx.quadraticCurveTo(lastX, lastY, xc, yc);
+                    ctx.stroke();
+                    lastX = x; lastY = y;
                     ctx.globalCompositeOperation = 'source-over';
                 } 
                 else {
